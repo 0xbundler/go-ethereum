@@ -89,6 +89,9 @@ type Config struct {
 	NetworkId uint64 // Network ID to use for selecting peers to connect to
 	SyncMode  downloader.SyncMode
 
+	// state expiry configs
+	StateExpiryEnable bool
+
 	// This can be set to list of enrtree:// URLs which will be queried for
 	// for nodes to connect to.
 	EthDiscoveryURLs  []string

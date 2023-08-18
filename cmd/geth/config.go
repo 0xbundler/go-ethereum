@@ -160,6 +160,7 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 		cfg.Ethstats.URL = ctx.String(utils.EthStatsURLFlag.Name)
 	}
 	applyMetricConfig(ctx, &cfg)
+	applyStateExpiryConfig(ctx, &cfg)
 
 	return stack, cfg
 }
@@ -284,6 +285,12 @@ func applyMetricConfig(ctx *cli.Context, cfg *gethConfig) {
 	}
 	if ctx.IsSet(utils.MetricsInfluxDBOrganizationFlag.Name) {
 		cfg.Metrics.InfluxDBOrganization = ctx.String(utils.MetricsInfluxDBOrganizationFlag.Name)
+	}
+}
+
+func applyStateExpiryConfig(ctx *cli.Context, cfg *gethConfig) {
+	if ctx.IsSet(utils.StateExpiryEnableFlag.Name) {
+		cfg.Eth.StateExpiryEnable = ctx.Bool(utils.StateExpiryEnableFlag.Name)
 	}
 }
 
