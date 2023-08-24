@@ -299,6 +299,37 @@ func (it *iterator) Next() bool {
 	return it.index < len(it.keys)
 }
 
+func (it *iterator) First() bool {
+	it.index = 0
+	return true
+}
+
+func (it *iterator) Last() bool {
+	it.index = len(it.keys) - 1
+	return true
+}
+
+func (it *iterator) Prev() bool {
+	if it.index < 0 {
+		return false
+	}
+	it.index -= 1
+	return it.index >= 0
+}
+
+func (it *iterator) Seek(key []byte) bool {
+	it.First()
+	query := string(key)
+	for i, c := range it.keys {
+		if c >= query {
+			it.index = i
+			return true
+		}
+	}
+
+	return false
+}
+
 // Error returns any accumulated error. Exhausting all the key/value pairs
 // is not considered to be an error. A memory iterator cannot encounter errors.
 func (it *iterator) Error() error {
