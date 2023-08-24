@@ -43,6 +43,9 @@ type diskLayer struct {
 	genAbort   chan chan *generatorStats // Notification channel to abort generating the snapshot in this layer
 
 	lock sync.RWMutex
+
+	// state expiry feature flag
+	enableStateExpiry bool
 }
 
 // Root returns  root hash for which this snapshot was made.
@@ -146,8 +149,20 @@ func (dl *diskLayer) Storage(accountHash, storageHash common.Hash) ([]byte, erro
 		snapshotCleanStorageReadMeter.Mark(int64(len(blob)))
 		return blob, nil
 	}
+
 	// Cache doesn't contain storage slot, pull from disk and cache for later
-	blob := rawdb.ReadStorageSnapshot(dl.diskdb, accountHash, storageHash)
+	var blob []byte
+	if !dl.enableStateExpiry {
+		blob = rawdb.ReadStorageSnapshot(dl.diskdb, accountHash, storageHash)
+	} else {
+		// using state expiry feature, must seek shrink kv, or find target kv.
+		_, rawv, found := rawdb.SeekNearestStorageSnapshot(dl.diskdb, accountHash, storageHash)
+		// if not find target key or upper shrink node, it must be empty key
+		if found || (len(rawv) > 0 && GetValueTypeFromRLPBytes(rawv) == ShrinkNodeWithEpochType) {
+			blob = rawv
+		}
+	}
+	// TODO(0xbundler): support mem shrink path cache seek, not only key->shrinkVal cache
 	dl.cache.Set(key, blob)
 
 	snapshotCleanStorageMissMeter.Mark(1)

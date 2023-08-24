@@ -17,6 +17,7 @@
 package memorydb
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -29,4 +30,41 @@ func TestMemoryDB(t *testing.T) {
 			return New()
 		})
 	})
+}
+
+func TestMemoryDBSeeker(t *testing.T) {
+	db := New()
+
+	db.Put([]byte("key1111"), []byte("val1"))
+	db.Put([]byte("key1112"), []byte("val2"))
+	db.Put([]byte("key1121"), []byte("val3"))
+	db.Put([]byte("key1211"), []byte("val4"))
+	db.Put([]byte("key122"), []byte("val5"))
+	db.Put([]byte("key122F"), []byte("val6"))
+
+	// seek from large scope
+	iter := db.NewIterator([]byte("key1"), nil)
+	seeker := iter.(ethdb.IteratorSeeker)
+	assert.Equal(t, true, seeker.First())
+	assert.Equal(t, []byte("key1111"), seeker.Key())
+	assert.Equal(t, []byte("val1"), seeker.Value())
+	assert.Equal(t, true, seeker.Last())
+	assert.Equal(t, []byte("key122F"), seeker.Key())
+	assert.Equal(t, []byte("val6"), seeker.Value())
+	assert.Equal(t, true, seeker.Seek([]byte("key1221")))
+	assert.Equal(t, []byte("key122F"), seeker.Key())
+	assert.Equal(t, []byte("val6"), seeker.Value())
+	assert.Equal(t, true, seeker.Prev())
+	assert.Equal(t, []byte("key122"), seeker.Key())
+	assert.Equal(t, []byte("val5"), seeker.Value())
+
+	// seek from target
+	iter = db.NewIterator([]byte("key1"), []byte("221"))
+	seeker = iter.(ethdb.IteratorSeeker)
+	assert.Equal(t, true, seeker.Next())
+	assert.Equal(t, []byte("key122F"), seeker.Key())
+	assert.Equal(t, []byte("val6"), seeker.Value())
+	assert.Equal(t, true, seeker.Last())
+	assert.Equal(t, []byte("key122F"), seeker.Key())
+	assert.Equal(t, []byte("val6"), seeker.Value())
 }

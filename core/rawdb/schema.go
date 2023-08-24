@@ -198,6 +198,11 @@ func storageSnapshotKey(accountHash, storageHash common.Hash) []byte {
 	return append(append(SnapshotStoragePrefix, accountHash.Bytes()...), storageHash.Bytes()...)
 }
 
+// storageSnapshotPrefixKey = SnapshotStoragePrefix + account hash + prefix
+func storageSnapshotPrefixKey(accountHash common.Hash, prefix []byte) []byte {
+	return append(append(SnapshotStoragePrefix, accountHash.Bytes()...), prefix...)
+}
+
 // storageSnapshotsKey = SnapshotStoragePrefix + account hash + storage hash
 func storageSnapshotsKey(accountHash common.Hash) []byte {
 	return append(SnapshotStoragePrefix, accountHash.Bytes()...)

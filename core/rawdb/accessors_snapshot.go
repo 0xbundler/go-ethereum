@@ -17,6 +17,7 @@
 package rawdb
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -96,6 +97,43 @@ func DeleteAccountSnapshot(db ethdb.KeyValueWriter, hash common.Hash) {
 func ReadStorageSnapshot(db ethdb.KeyValueReader, accountHash, storageHash common.Hash) []byte {
 	data, _ := db.Get(storageSnapshotKey(accountHash, storageHash))
 	return data
+}
+
+// SeekNearestStorageSnapshot seak the nearest kv from snapshot for state expiry feature.
+func SeekNearestStorageSnapshot(db ethdb.KeyValueStore, accountHash, storageHash common.Hash) ([]byte, []byte, bool) {
+	key := storageSnapshotKey(accountHash, storageHash)
+	// seek in whole contract snap space
+	iter := db.NewIterator(key[:33], nil)
+	defer iter.Release()
+	seeker, ok := iter.(ethdb.IteratorSeeker)
+	if !ok {
+		// TODO(0xbundler): support seeker in pebble later
+		panic("cannot use seek function in this database")
+	}
+
+	// first check if find the target key
+	if seeker.Seek(key) && bytes.Equal(key, seeker.Key()) {
+		return seeker.Key(), seeker.Value(), true
+	}
+
+	// then check the prev if shrink key
+	if seeker.Prev() {
+		return seeker.Key(), seeker.Value(), false
+	}
+	return nil, nil, false
+}
+
+// StorageSnapshotSeeker get target prefix seeker for state expiry feature.
+func StorageSnapshotSeeker(db ethdb.KeyValueStore, accountHash common.Hash, prefix []byte) ethdb.IteratorSeeker {
+	key := storageSnapshotPrefixKey(accountHash, prefix)
+	// seek in whole contract snap space
+	iter := db.NewIterator(key[:33], key[33:])
+	seeker, ok := iter.(ethdb.IteratorSeeker)
+	if !ok {
+		// TODO(0xbundler): support seeker in pebble later
+		panic("cannot use seek function in this database")
+	}
+	return seeker
 }
 
 // WriteStorageSnapshot stores the snapshot entry of an storage trie leaf.
