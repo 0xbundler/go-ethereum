@@ -124,6 +124,11 @@ type StateDB struct {
 	validRevisions []revision
 	nextRevisionId int
 
+	// state expiry feature
+	enableStateExpiry bool
+	epoch             types.StateEpoch // epoch indicate stateDB start at which block's target epoch
+	remoteNode        interface{}      //RemoteFullStateNode //TODO(0xbundler): add interface to fetch expired proof from remote
+
 	// Measurements gathered during execution for debugging purposes
 	AccountReads         time.Duration
 	AccountHashes        time.Duration
@@ -169,11 +174,24 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		accessList:           newAccessList(),
 		transientStorage:     newTransientStorage(),
 		hasher:               crypto.NewKeccakState(),
+		epoch:                types.StateEpoch0,
 	}
 	if sdb.snaps != nil {
 		sdb.snap = sdb.snaps.Snapshot(root)
 	}
 	return sdb, nil
+}
+
+// SetEpoch it must set in initial, reset later will cause wrong result
+func (s *StateDB) SetEpoch(config *params.ChainConfig, height *big.Int) *StateDB {
+	s.epoch = types.GetStateEpoch(config, height)
+	return s
+}
+
+// SetRemoteNode it must set in initial, reset later will cause wrong result
+func (s *StateDB) SetRemoteNode(remote interface{}) *StateDB {
+	s.remoteNode = remote
+	return s
 }
 
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
@@ -1358,6 +1376,13 @@ func (s *StateDB) AddSlotToAccessList(addr common.Address, slot common.Hash) {
 			slot:    &slot,
 		})
 	}
+}
+
+func (s *StateDB) EnableExpire() bool {
+	if !s.enableStateExpiry {
+		return false
+	}
+	return types.EpochExpired(types.StateEpoch0, s.epoch)
 }
 
 // AddressInAccessList returns true if the given address is in the access list.
