@@ -225,6 +225,10 @@ type BlockChain struct {
 	processor  Processor // Block transaction processor interface
 	forker     *ForkChoice
 	vmConfig   vm.Config
+
+	// state expiry feature
+	enableStateExpiry bool
+	fullStateDB       ethdb.FullStateDB
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -427,6 +431,24 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		go bc.maintainTxIndex()
 	}
 	return bc, nil
+}
+
+func (bc *BlockChain) EnableStateExpiry() bool {
+	return bc.enableStateExpiry
+}
+
+func (bc *BlockChain) FullStateDB() ethdb.FullStateDB {
+	return bc.fullStateDB
+}
+
+func (bc *BlockChain) InitStateExpiry(endpoint string) error {
+	rpcServer, err := ethdb.NewFullStateRPCServer(endpoint)
+	if err != nil {
+		return err
+	}
+	bc.enableStateExpiry = true
+	bc.fullStateDB = rpcServer
+	return nil
 }
 
 // empty returns an indicator whether the blockchain is empty.
@@ -1707,6 +1729,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		if err != nil {
 			return it.index, err
 		}
+		if bc.enableStateExpiry {
+			statedb.InitStateExpiry(bc.chainConfig, block.Number(), bc.fullStateDB)
+		}
 
 		// Enable prefetching to pull in trie node paths while processing transactions
 		statedb.StartPrefetcher("chain")
@@ -1718,6 +1743,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		if !bc.cacheConfig.TrieCleanNoPrefetch {
 			if followup, err := it.peek(); followup != nil && err == nil {
 				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
+				if throwaway != nil && bc.enableStateExpiry {
+					throwaway.InitStateExpiry(bc.chainConfig, block.Number(), bc.fullStateDB)
+				}
 
 				go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {
 					bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)

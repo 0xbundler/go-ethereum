@@ -20,6 +20,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"math/big"
 	"sort"
 	"time"
@@ -126,8 +127,8 @@ type StateDB struct {
 
 	// state expiry feature
 	enableStateExpiry bool
-	epoch             types.StateEpoch // epoch indicate stateDB start at which block's target epoch
-	remoteNode        interface{}      //RemoteFullStateNode //TODO(0xbundler): add interface to fetch expired proof from remote
+	epoch             types.StateEpoch  // epoch indicate stateDB start at which block's target epoch
+	fullStateDB       ethdb.FullStateDB //RemoteFullStateNode
 
 	// Measurements gathered during execution for debugging purposes
 	AccountReads         time.Duration
@@ -182,15 +183,14 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 	return sdb, nil
 }
 
-// SetEpoch it must set in initial, reset later will cause wrong result
-func (s *StateDB) SetEpoch(config *params.ChainConfig, height *big.Int) *StateDB {
+// InitStateExpiry it must set in initial, reset later will cause wrong result
+func (s *StateDB) InitStateExpiry(config *params.ChainConfig, height *big.Int, remote ethdb.FullStateDB) *StateDB {
+	if config == nil || height == nil || remote == nil {
+		panic("cannot init state expiry stateDB with nil config/height/remote")
+	}
+	s.enableStateExpiry = true
+	s.fullStateDB = remote
 	s.epoch = types.GetStateEpoch(config, height)
-	return s
-}
-
-// SetRemoteNode it must set in initial, reset later will cause wrong result
-func (s *StateDB) SetRemoteNode(remote interface{}) *StateDB {
-	s.remoteNode = remote
 	return s
 }
 
@@ -799,6 +799,11 @@ func (s *StateDB) Copy() *StateDB {
 		preimages:            make(map[common.Hash][]byte, len(s.preimages)),
 		journal:              newJournal(),
 		hasher:               crypto.NewKeccakState(),
+
+		// state expiry copy
+		epoch:             s.epoch,
+		enableStateExpiry: s.enableStateExpiry,
+		fullStateDB:       s.fullStateDB,
 
 		// In order for the block producer to be able to use and make additions
 		// to the snapshot tree, we need to copy that as well. Otherwise, any

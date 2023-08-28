@@ -195,6 +195,7 @@ var (
 
 	stateExpiryFlags = []cli.Flag{
 		utils.StateExpiryEnableFlag,
+		utils.StateExpiryFullStateEndpointFlag,
 	}
 )
 
