@@ -102,6 +102,7 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
+	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20210311194329-9aa0e372d097 // indirect
 	github.com/kilic/bls12-381 v0.1.0 // indirect
 	github.com/klauspost/compress v1.15.15 // indirect

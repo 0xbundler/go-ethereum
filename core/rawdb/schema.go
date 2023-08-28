@@ -91,6 +91,13 @@ var (
 	// transitionStatusKey tracks the eth2 transition status.
 	transitionStatusKey = []byte("eth2-transition")
 
+	// state expiry feature
+	// epochMetaSnapshotJournalKey tracks the in-memory diff layers across restarts.
+	epochMetaSnapshotJournalKey = []byte("epochMetaSnapshotJournalKey")
+
+	// epochMetaPlainStateMeta save disk layer meta data
+	epochMetaPlainStateMeta = []byte("epochMetaPlainStateMeta")
+
 	// Data item prefixes (use single byte to avoid mixing data types, avoid `i`, used for indexes).
 	headerPrefix       = []byte("h") // headerPrefix + num (uint64 big endian) + hash -> header
 	headerTDSuffix     = []byte("t") // headerPrefix + num (uint64 big endian) + hash + headerTDSuffix -> td
@@ -128,6 +135,9 @@ var (
 	BloomTrieIndexPrefix = []byte("bltIndex-")
 
 	CliqueSnapshotPrefix = []byte("clique-")
+
+	// state expiry feature
+	EpochMetaPlainStatePrefix = []byte("em") // EpochMetaPlainStatePrefix + addr hash + path -> val
 
 	preimageCounter    = metrics.NewRegisteredCounter("db/preimage/total", nil)
 	preimageHitCounter = metrics.NewRegisteredCounter("db/preimage/hits", nil)
