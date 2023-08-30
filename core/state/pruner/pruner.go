@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/params"
 	"math"
 	"os"
 	"path/filepath"
@@ -73,6 +74,7 @@ type Config struct {
 // disk read performance to some extent.
 type Pruner struct {
 	config      Config
+	chainConfig *params.ChainConfig
 	chainHeader *types.Header
 	db          ethdb.Database
 	stateBloom  *stateBloom
@@ -84,6 +86,10 @@ func NewPruner(db ethdb.Database, config Config) (*Pruner, error) {
 	headBlock := rawdb.ReadHeadBlock(db)
 	if headBlock == nil {
 		return nil, errors.New("failed to load head block")
+	}
+	chainConfig := rawdb.ReadChainConfig(db, headBlock.Hash())
+	if chainConfig == nil {
+		return nil, errors.New("failed to load chainConfig")
 	}
 	snapconfig := snapshot.Config{
 		CacheSize:  256,
@@ -106,6 +112,7 @@ func NewPruner(db ethdb.Database, config Config) (*Pruner, error) {
 	}
 	return &Pruner{
 		config:      config,
+		chainConfig: chainConfig,
 		chainHeader: headBlock.Header(),
 		db:          db,
 		stateBloom:  stateBloom,
@@ -307,10 +314,14 @@ func (p *Pruner) Prune(root common.Hash) error {
 		}
 		middleRoots[layer.Root()] = struct{}{}
 	}
+
+	pruneExpiredCh := make(chan *snapshot.ContractItem, 100000)
+	epoch := types.GetStateEpoch(p.chainConfig, p.chainHeader.Number)
+	go asyncPruneExpired(p.db, root, epoch, pruneExpiredCh)
 	// Traverse the target state, re-construct the whole state trie and
 	// commit to the given bloom filter.
 	start := time.Now()
-	if err := snapshot.GenerateTrie(p.snaptree, root, p.db, p.stateBloom); err != nil {
+	if err := snapshot.GenerateTrie(p.snaptree, root, p.db, p.stateBloom, pruneExpiredCh); err != nil {
 		return err
 	}
 	// Traverse the genesis, put all genesis state entries into the
@@ -326,6 +337,62 @@ func (p *Pruner) Prune(root common.Hash) error {
 	}
 	log.Info("State bloom filter committed", "name", filterName)
 	return prune(p.snaptree, root, p.db, p.stateBloom, filterName, middleRoots, start)
+}
+
+// asyncPruneExpired prune trie expired state
+// TODO(0xbundler): here are some issues when just delete it from hash-based storage, because it's shared kv in hbss
+// but it's ok for pbss.
+func asyncPruneExpired(diskdb ethdb.Database, stateRoot common.Hash, currentEpoch types.StateEpoch, expireRootCh chan *snapshot.ContractItem) {
+	db := trie.NewDatabaseWithConfig(diskdb, &trie.Config{
+		EnableStateExpiry: true,
+		PathDB:            nil, // TODO(0xbundler): support later
+	})
+
+	pruneItemCh := make(chan *trie.NodeInfo, 100000)
+	go asyncPruneExpiredStorageInDisk(diskdb, pruneItemCh)
+	for item := range expireRootCh {
+		tr, err := trie.New(&trie.ID{
+			StateRoot: stateRoot,
+			Owner:     item.Addr,
+			Root:      item.Root,
+		}, db)
+		if err != nil {
+			log.Error("asyncPruneExpired, trie.New err", "id", item, "err", err)
+			continue
+		}
+		tr.SetEpoch(currentEpoch)
+		if err = tr.PruneExpired(pruneItemCh); err != nil {
+			log.Error("asyncPruneExpired, PruneExpired err", "id", item, "err", err)
+		}
+	}
+}
+
+func asyncPruneExpiredStorageInDisk(diskdb ethdb.Database, expiredCh chan *trie.NodeInfo) {
+	batch := diskdb.NewBatch()
+	for info := range expiredCh {
+		addr := info.Addr
+		// delete trie kv
+		rawdb.DeleteTrieNode(batch, addr, info.Path, info.Hash, rawdb.HashScheme)
+		// delete epoch meta
+		if info.IsBranch {
+			rawdb.DeleteEpochMetaPlainState(batch, addr, string(info.Path))
+		}
+		// replace snapshot kv only epoch
+		if info.IsLeaf {
+			sv := snapshot.NewValueWithEpoch(info.Epoch, nil)
+			buf := rlp.NewEncoderBuffer(nil)
+			sv.EncodeToRLPBytes(&buf)
+			rawdb.WriteStorageSnapshot(batch, addr, info.Key, buf.ToBytes())
+		}
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			batch.Write()
+			batch.Reset()
+		}
+	}
+	if batch.ValueSize() > 0 {
+		batch.Write()
+		batch.Reset()
+	}
 }
 
 // RecoverPruning will resume the pruning procedure during the system restart.
