@@ -288,6 +288,14 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	bc.processor = NewStateProcessor(chainConfig, bc, engine)
 
 	var err error
+	if cacheConfig.EnableStateExpiry {
+		log.Info("enable state expiry feature", "RemoteEndPoint", cacheConfig.RemoteEndPoint)
+		bc.enableStateExpiry = true
+		bc.fullStateDB, err = ethdb.NewFullStateRPCServer(cacheConfig.RemoteEndPoint)
+		if err != nil {
+			return nil, err
+		}
+	}
 	bc.hc, err = NewHeaderChain(db, chainConfig, engine, bc.insertStopped)
 	if err != nil {
 		return nil, err
@@ -434,14 +442,6 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 
 		bc.wg.Add(1)
 		go bc.maintainTxIndex()
-	}
-
-	if cacheConfig.EnableStateExpiry {
-		bc.enableStateExpiry = true
-		bc.fullStateDB, err = ethdb.NewFullStateRPCServer(cacheConfig.RemoteEndPoint)
-		if err != nil {
-			return nil, err
-		}
 	}
 	return bc, nil
 }
@@ -1733,7 +1733,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			return it.index, err
 		}
 		if bc.enableStateExpiry {
-			statedb.InitStateExpiry(bc.chainConfig, block.Number(), bc.fullStateDB)
+			statedb.InitStateExpiryFeature(bc.chainConfig, bc.fullStateDB, parent.Hash(), block.Number())
 		}
 
 		// Enable prefetching to pull in trie node paths while processing transactions
@@ -1747,7 +1747,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			if followup, err := it.peek(); followup != nil && err == nil {
 				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
 				if throwaway != nil && bc.enableStateExpiry {
-					throwaway.InitStateExpiry(bc.chainConfig, block.Number(), bc.fullStateDB)
+					throwaway.InitStateExpiryFeature(bc.chainConfig, bc.fullStateDB, parent.Hash(), block.Number())
 				}
 
 				go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {

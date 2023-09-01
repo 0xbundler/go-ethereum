@@ -17,6 +17,9 @@
 package state
 
 import (
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/trie"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -39,6 +42,12 @@ type triePrefetcher struct {
 	root     common.Hash            // Root hash of the account trie for metrics
 	fetches  map[string]Trie        // Partially or fully fetcher tries
 	fetchers map[string]*subfetcher // Subfetchers for each trie
+
+	// state expiry feature
+	enableStateExpiry bool              // default disable
+	epoch             types.StateEpoch  // epoch indicate stateDB start at which block's target epoch
+	fullStateDB       ethdb.FullStateDB // RemoteFullStateNode
+	blockHash         common.Hash
 
 	deliveryMissMeter metrics.Meter
 	accountLoadMeter  metrics.Meter
@@ -69,6 +78,14 @@ func newTriePrefetcher(db Database, root common.Hash, namespace string) *triePre
 		storageWasteMeter: metrics.GetOrRegisterMeter(prefix+"/storage/waste", nil),
 	}
 	return p
+}
+
+// InitStateExpiryFeature it must call in initial period.
+func (p *triePrefetcher) InitStateExpiryFeature(epoch types.StateEpoch, blockHash common.Hash, fullStateDB ethdb.FullStateDB) {
+	p.enableStateExpiry = true
+	p.epoch = epoch
+	p.fullStateDB = fullStateDB
+	p.blockHash = blockHash
 }
 
 // close iterates over all the subfetchers, aborts any that were left spinning
@@ -151,6 +168,10 @@ func (p *triePrefetcher) prefetch(owner common.Hash, root common.Hash, addr comm
 	fetcher := p.fetchers[id]
 	if fetcher == nil {
 		fetcher = newSubfetcher(p.db, p.root, owner, root, addr)
+		if p.enableStateExpiry {
+			fetcher.initStateExpiryFeature(p.epoch, p.blockHash, p.fullStateDB)
+		}
+		fetcher.start()
 		p.fetchers[id] = fetcher
 	}
 	fetcher.schedule(keys)
@@ -212,6 +233,12 @@ type subfetcher struct {
 	addr  common.Address // Address of the account that the trie belongs to
 	trie  Trie           // Trie being populated with nodes
 
+	// state expiry feature
+	enableStateExpiry bool              // default disable
+	epoch             types.StateEpoch  // epoch indicate stateDB start at which block's target epoch
+	fullStateDB       ethdb.FullStateDB // RemoteFullStateNode
+	blockHash         common.Hash
+
 	tasks [][]byte   // Items queued up for retrieval
 	lock  sync.Mutex // Lock protecting the task queue
 
@@ -240,8 +267,19 @@ func newSubfetcher(db Database, state common.Hash, owner common.Hash, root commo
 		copy:  make(chan chan Trie),
 		seen:  make(map[string]struct{}),
 	}
-	go sf.loop()
 	return sf
+}
+
+func (sf *subfetcher) start() {
+	go sf.loop()
+}
+
+// InitStateExpiryFeature it must call in initial period.
+func (sf *subfetcher) initStateExpiryFeature(epoch types.StateEpoch, blockHash common.Hash, fullStateDB ethdb.FullStateDB) {
+	sf.enableStateExpiry = true
+	sf.epoch = epoch
+	sf.fullStateDB = fullStateDB
+	sf.blockHash = blockHash
 }
 
 // schedule adds a batch of trie keys to the queue to prefetch.
@@ -307,6 +345,9 @@ func (sf *subfetcher) loop() {
 			log.Warn("Trie prefetcher failed opening trie", "root", sf.root, "err", err)
 			return
 		}
+		if sf.enableStateExpiry {
+			trie.SetEpoch(sf.epoch)
+		}
 		sf.trie = trie
 	}
 	// Trie opened successfully, keep prefetching items
@@ -341,7 +382,18 @@ func (sf *subfetcher) loop() {
 						if len(task) == common.AddressLength {
 							sf.trie.GetAccount(common.BytesToAddress(task))
 						} else {
-							sf.trie.GetStorage(sf.addr, task)
+							_, err := sf.trie.GetStorage(sf.addr, task)
+							// handle expired state
+							if sf.enableStateExpiry {
+								if exErr, match := err.(*trie.ExpiredNodeError); match {
+									key := common.BytesToHash(task)
+									log.Info("fetchExpiredStorageFromRemote in trie prefetcher", "addr", sf.addr, "prefixKey", exErr.Path, "key", key)
+									_, err = fetchExpiredStorageFromRemote(sf.fullStateDB, sf.blockHash, sf.addr, sf.trie, exErr.Path, key)
+									if err != nil {
+										log.Error("subfetcher fetchExpiredStorageFromRemote err", "addr", sf.addr, "path", exErr.Path, "err", err)
+									}
+								}
+							}
 						}
 						sf.seen[string(task)] = struct{}{}
 					}
