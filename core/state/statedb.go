@@ -886,7 +886,8 @@ func (s *StateDB) Copy() *StateDB {
 	// If there's a prefetcher running, make an inactive copy of it that can
 	// only access data but does not actively preload (since the user will not
 	// know that they need to explicitly terminate an active copy).
-	if s.prefetcher != nil {
+	// State Expiry cannot use older prefetcher directly.
+	if !s.enableStateExpiry && s.prefetcher != nil {
 		state.prefetcher = s.prefetcher.copy()
 	}
 	return state
