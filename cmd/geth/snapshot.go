@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/ethereum/go-ethereum/core"
 	"os"
 	"time"
 
@@ -51,6 +52,8 @@ var (
 				Action:    pruneState,
 				Flags: flags.Merge([]cli.Flag{
 					utils.BloomFilterSizeFlag,
+					utils.StateExpiryEnableFlag,
+					configFileFlag,
 				}, utils.NetworkFlags, utils.DatabasePathFlags),
 				Description: `
 geth snapshot prune-state <state-root>
@@ -159,15 +162,22 @@ block is used.
 // Deprecation: this command should be deprecated once the hash-based
 // scheme is deprecated.
 func pruneState(ctx *cli.Context) error {
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
 	chaindb := utils.MakeChainDatabase(ctx, stack, false)
 	defer chaindb.Close()
 
+	chainConfig, err := core.LoadChainConfig(chaindb, cfg.Eth.Genesis)
+	if err != nil {
+		return err
+	}
+
 	prunerconfig := pruner.Config{
-		Datadir:   stack.ResolvePath(""),
-		BloomSize: ctx.Uint64(utils.BloomFilterSizeFlag.Name),
+		Datadir:           stack.ResolvePath(""),
+		BloomSize:         ctx.Uint64(utils.BloomFilterSizeFlag.Name),
+		EnableStateExpiry: cfg.Eth.StateExpiryEnable,
+		ChainConfig:       chainConfig,
 	}
 	pruner, err := pruner.NewPruner(chaindb, prunerconfig)
 	if err != nil {

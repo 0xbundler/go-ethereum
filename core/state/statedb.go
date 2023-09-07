@@ -39,6 +39,13 @@ import (
 	"github.com/ethereum/go-ethereum/trie/triestate"
 )
 
+var (
+	getCommittedStorageMeter       = metrics.NewRegisteredMeter("state/contract/committed", nil)
+	getCommittedStorageSnapMeter   = metrics.NewRegisteredMeter("state/contract/committed/snap", nil)
+	getCommittedStorageTrieMeter   = metrics.NewRegisteredMeter("state/contract/committed/trie", nil)
+	getCommittedStorageRemoteMeter = metrics.NewRegisteredMeter("state/contract/committed/remote", nil)
+)
+
 type revision struct {
 	id           int
 	journalIndex int
@@ -194,7 +201,7 @@ func (s *StateDB) InitStateExpiryFeature(config *params.ChainConfig, remote ethd
 	s.fullStateDB = remote
 	s.epoch = types.GetStateEpoch(config, expectHeight)
 	s.originalHash = startAtBlockHash
-	log.Info("StateDB enable state expiry feature", "expectHeight", expectHeight, "startAtBlockHash", startAtBlockHash, "epoch", s.epoch)
+	log.Debug("StateDB enable state expiry feature", "expectHeight", expectHeight, "startAtBlockHash", startAtBlockHash, "epoch", s.epoch)
 	return s
 }
 
