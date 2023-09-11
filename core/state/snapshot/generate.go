@@ -367,7 +367,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 		}
 		if nodes != nil {
 			tdb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
-			tdb.Commit(root, false)
+			tdb.CommitAll(root, false)
 		}
 		resolver = func(owner common.Hash, path []byte, hash common.Hash) []byte {
 			return rawdb.ReadTrieNode(mdb, owner, path, hash, tdb.Scheme())

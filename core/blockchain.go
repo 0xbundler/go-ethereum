@@ -963,13 +963,6 @@ func (bc *BlockChain) Stop() {
 		}
 	}
 
-	epochMetaSnapTree := bc.triedb.EpochMetaSnapTree()
-	if epochMetaSnapTree != nil {
-		if err := epochMetaSnapTree.Journal(); err != nil {
-			log.Error("Failed to journal epochMetaSnapTree", "err", err)
-		}
-	}
-
 	// Ensure the state of a recent block is also stored to disk before exiting.
 	// We're writing three different states to catch different restart scenarios:
 	//  - HEAD:     So we don't need to reprocess any blocks in the general case
@@ -993,6 +986,9 @@ func (bc *BlockChain) Stop() {
 			if err := triedb.Commit(snapBase, true); err != nil {
 				log.Error("Failed to commit recent state trie", "err", err)
 			}
+			if err := triedb.CommitEpochMeta(snapBase); err != nil {
+				log.Error("Failed to commit recent epoch meta", "err", err)
+			}
 		}
 		for !bc.triegc.Empty() {
 			triedb.Dereference(bc.triegc.PopItem())
@@ -1001,6 +997,14 @@ func (bc *BlockChain) Stop() {
 			log.Error("Dangling trie nodes after full cleanup")
 		}
 	}
+
+	epochMetaSnapTree := bc.triedb.EpochMetaSnapTree()
+	if epochMetaSnapTree != nil {
+		if err := epochMetaSnapTree.Journal(); err != nil {
+			log.Error("Failed to journal epochMetaSnapTree", "err", err)
+		}
+	}
+
 	// Flush the collected preimages to disk
 	if err := bc.stateCache.TrieDB().Close(); err != nil {
 		log.Error("Failed to close trie db", "err", err)
@@ -1375,7 +1379,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 	// If we're running an archive node, always flush
 	if bc.cacheConfig.TrieDirtyDisabled {
-		return bc.triedb.Commit(root, false)
+		return bc.triedb.CommitAll(root, false)
 	}
 	// Full but not archive node, do proper garbage collection
 	bc.triedb.Reference(root, common.Hash{}) // metadata reference to keep trie alive
@@ -1411,7 +1415,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 				log.Info("State in memory for too long, committing", "time", bc.gcproc, "allowance", flushInterval, "optimum", float64(chosen-bc.lastWrite)/TriesInMemory)
 			}
 			// Flush an entire trie and restart the counters
-			bc.triedb.Commit(header.Root, true)
+			bc.triedb.CommitAll(header.Root, true)
 			bc.lastWrite = chosen
 			bc.gcproc = 0
 		}
