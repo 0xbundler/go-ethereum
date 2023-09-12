@@ -468,6 +468,7 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 		txLookups       stat
 		accountSnaps    stat
 		storageSnaps    stat
+		snapJournal     stat
 		preimages       stat
 		bloomBits       stat
 		beaconHeaders   stat
@@ -543,6 +544,8 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 			bloomTrieNodes.Add(size)
 		case bytes.Equal(key, epochMetaPlainStateMeta):
 			epochMetaMetaSize.Add(size)
+		case bytes.Equal(key, snapshotJournalKey):
+			snapJournal.Add(size)
 		case bytes.Equal(key, epochMetaSnapshotJournalKey):
 			epochMetaSnapJournalSize.Add(size)
 		case bytes.HasPrefix(key, EpochMetaPlainStatePrefix) && len(key) >= (len(EpochMetaPlainStatePrefix)+common.HashLength):
@@ -551,7 +554,7 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 			var accounted bool
 			for _, meta := range [][]byte{
 				databaseVersionKey, headHeaderKey, headBlockKey, headFastBlockKey, headFinalizedBlockKey,
-				lastPivotKey, fastTrieProgressKey, snapshotDisabledKey, SnapshotRootKey, snapshotJournalKey,
+				lastPivotKey, fastTrieProgressKey, snapshotDisabledKey, SnapshotRootKey,
 				snapshotGeneratorKey, snapshotRecoveryKey, txIndexTailKey, fastTxLookupLimitKey,
 				uncleanShutdownKey, badBlockKey, transitionStatusKey, skeletonSyncStatusKey,
 			} {
@@ -586,6 +589,7 @@ func InspectDatabase(db ethdb.Database, keyPrefix, keyStart []byte) error {
 		{"Key-Value store", "Trie preimages", preimages.Size(), preimages.Count()},
 		{"Key-Value store", "Account snapshot", accountSnaps.Size(), accountSnaps.Count()},
 		{"Key-Value store", "Storage snapshot", storageSnaps.Size(), storageSnaps.Count()},
+		{"Key-Value store", "Snapshot Journal", snapJournal.Size(), snapJournal.Count()},
 		{"Key-Value store", "Beacon sync headers", beaconHeaders.Size(), beaconHeaders.Count()},
 		{"Key-Value store", "Clique snapshots", cliqueSnaps.Size(), cliqueSnaps.Count()},
 		{"Key-Value store", "Singleton metadata", metadata.Size(), metadata.Count()},

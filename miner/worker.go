@@ -19,6 +19,7 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -72,6 +73,9 @@ const (
 )
 
 var (
+	writeBlockTimer    = metrics.NewRegisteredTimer("worker/writeblock", nil)
+	finalizeBlockTimer = metrics.NewRegisteredTimer("worker/finalizeblock", nil)
+
 	errBlockInterruptedByNewHead  = errors.New("new head arrived while building block")
 	errBlockInterruptedByRecommit = errors.New("recommit interrupt while building block")
 	errBlockInterruptedByTimeout  = errors.New("timeout while building block")
@@ -679,11 +683,13 @@ func (w *worker) resultLoop() {
 				logs = append(logs, receipt.Logs...)
 			}
 			// Commit block and state to database.
+			start := time.Now()
 			_, err := w.chain.WriteBlockAndSetHead(block, receipts, logs, task.state, true)
 			if err != nil {
 				log.Error("Failed writing block to chain", "err", err)
 				continue
 			}
+			writeBlockTimer.UpdateSince(start)
 			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
 				"elapsed", common.PrettyDuration(time.Since(task.createdAt)))
 
@@ -1045,11 +1051,13 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		// Create a local environment copy, avoid the data race with snapshot state.
 		// https://github.com/ethereum/go-ethereum/issues/24299
 		env := env.copy()
+		finalizeStart := time.Now()
 		// Withdrawals are set to nil here, because this is only called in PoW.
 		block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, nil)
 		if err != nil {
 			return err
 		}
+		finalizeBlockTimer.UpdateSince(finalizeStart)
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
 			select {
