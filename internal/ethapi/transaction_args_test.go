@@ -243,6 +243,10 @@ func newBackendMock() *backendMock {
 	}
 }
 
+func (b *backendMock) StorageTrie(stateRoot common.Hash, addr common.Address, root common.Hash) (state.Trie, error) {
+	return nil, nil
+}
+
 func (b *backendMock) activateLondon() {
 	b.current.Number = big.NewInt(1100)
 }

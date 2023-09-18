@@ -1197,9 +1197,14 @@ func (t *Trie) tryRevive(n node, key []byte, targetPrefixKey []byte, nub MPTProo
 		if !isExpired {
 			return nil, false, NewReviveNotExpiredErr(key[:pos], epoch)
 		}
-		hn, ok := n.(hashNode)
-		if !ok {
-			return nil, false, fmt.Errorf("not match hashNode stub")
+
+		// TODO(asyukii): if trie already has the underlying expired subtree, we should not revive it again.
+		hn, _ := n.cache()
+		if hn == nil {
+			hasher := newHasher(false)
+			defer returnHasherToPool(hasher)
+			hashedNode, _ := hasher.hash(n, true)
+			hn = hashedNode.(hashNode)
 		}
 
 		cachedHash, _ := nub.n1.cache()

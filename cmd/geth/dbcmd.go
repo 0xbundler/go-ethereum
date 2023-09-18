@@ -163,6 +163,7 @@ WARNING: This is a low-level operation which may cause database corruption!`,
 		ArgsUsage: "<hex-encoded state root> <hex-encoded account hash> <hex-encoded storage trie root> <hex-encoded start (optional)> <int max elements (optional)>",
 		Flags: flags.Merge([]cli.Flag{
 			utils.SyncModeFlag,
+			utils.StateSchemeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "This command looks up the specified database key from the database.",
 	}
@@ -357,7 +358,7 @@ func inspectTrie(ctx *cli.Context) error {
 			log.Error("Empty root hash")
 		}
 		fmt.Printf("ReadBlockHeader, root: %v, blocknum: %v\n", trieRootHash, blockNumber)
-		trieDB := trie.NewDatabase(db)
+		trieDB := trie.NewDatabase(db, nil)
 		theTrie, err := trie.New(trie.TrieID(trieRootHash), trieDB)
 		if err != nil {
 			fmt.Printf("fail to new trie tree, err: %v, rootHash: %v\n", err, trieRootHash.String())
@@ -566,6 +567,9 @@ func dbDumpTrie(ctx *cli.Context) error {
 	db := utils.MakeChainDatabase(ctx, stack, true)
 	defer db.Close()
 
+	triedb := utils.MakeTrieDatabase(ctx, db, false, true)
+	defer triedb.Close()
+
 	var (
 		state   []byte
 		storage []byte
@@ -599,7 +603,7 @@ func dbDumpTrie(ctx *cli.Context) error {
 		}
 	}
 	id := trie.StorageTrieID(common.BytesToHash(state), common.BytesToHash(account), common.BytesToHash(storage))
-	theTrie, err := trie.New(id, trie.NewDatabase(db))
+	theTrie, err := trie.New(id, triedb)
 	if err != nil {
 		return err
 	}
